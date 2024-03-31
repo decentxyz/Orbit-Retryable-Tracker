@@ -11,7 +11,6 @@ import * as fs from 'fs'
 import * as path from 'path'
 import yargs from 'yargs'
 import winston from 'winston'
-
 // Interface defining additional properties for ChildNetwork
 export interface ChildNetwork extends ParentNetwork {
   parentRpcUrl: string
@@ -147,6 +146,8 @@ const processChildChain = async (
     return toBlock
   }
 
+  const MAX_CONCURRENT_PROMISES = 25;
+
   const checkRetryables = async (
     parentChainProvider: providers.Provider,
     childChainProvider: providers.Provider,
@@ -158,59 +159,73 @@ const processChildChain = async (
       bridgeAddress,
       { fromBlock, toBlock },
       parentChainProvider
-    )
+    );
 
-    const uniqueTxHashes = new Set<string>()
+    const uniqueTxHashes = new Set<string>();
 
     for (let messageDeliveredLog of messageDeliveredLogs) {
-      const { transactionHash: parentTxHash } = messageDeliveredLog
-      uniqueTxHashes.add(parentTxHash)
+      const { transactionHash: parentTxHash } = messageDeliveredLog;
+      uniqueTxHashes.add(parentTxHash);
     }
 
-    for (const parentTxHash of uniqueTxHashes) {
-      const parentTxReceipt = await parentChainProvider.getTransactionReceipt(
-        parentTxHash
-      )
-      const arbParentTxReceipt = new ParentChainTxReceipt(parentTxReceipt)
-      const messages = await arbParentTxReceipt.getL1ToL2Messages(
-        childChainProvider
-      )
+    let retryablesFound = false; // Initialize retryablesFound here
 
-      if (messages.length > 0) {
-        logResult(
-          childChain.name,
-          `${messages.length} retryable${
-            messages.length === 1 ? '' : 's'
-          } found for ${
-            childChain.name
-          } chain. Checking their status:\n\nArbtxhash: ${
-            childChain.parentExplorerUrl
-          }tx/${parentTxHash}`
-        )
-        console.log(
-          '----------------------------------------------------------'
-        )
-        for (let msgIndex = 0; msgIndex < messages.length; msgIndex++) {
-          const message = messages[msgIndex]
-          const retryableTicketId = message.retryableCreationId
-          let status = await message.status()
+    // Create chunks of uniqueTxHashes
+    const chunks = Array.from(uniqueTxHashes);
 
-          // Format the result message
-          const resultMessage = `${msgIndex + 1}. ${
-            ParentToChildMessageStatus[status]
-          }:\nOrbitTxHash: ${childChain.explorerUrl}tx/${retryableTicketId}`
+    // Process chunks sequentially, each with at most 25 promises running in parallel
+    for (let i = 0; i < chunks.length; i += MAX_CONCURRENT_PROMISES) {
+      const chunk = chunks.slice(i, i + MAX_CONCURRENT_PROMISES);
 
-          logResult(childChain.name, resultMessage)
-          console.log(
-            '----------------------------------------------------------'
-          )
-        }
-        retryablesFound = true // Set to true if retryables are found
-      }
+      await Promise.all(
+        chunk.map(async (parentTxHash) => {
+          const parentTxReceipt = await parentChainProvider.getTransactionReceipt(
+            parentTxHash
+          );
+          const arbParentTxReceipt = new ParentChainTxReceipt(parentTxReceipt);
+          const messages = await arbParentTxReceipt.getL1ToL2Messages(
+            childChainProvider
+          );
+
+          if (messages.length > 0) {
+            logResult(
+              childChain.name,
+              `${messages.length} retryable${
+                messages.length === 1 ? "" : "s"
+              } found for ${
+                childChain.name
+              } chain. Checking their status:\n\nArbtxhash: ${
+                childChain.parentExplorerUrl
+              }tx/${parentTxHash}`
+            );
+            console.log(
+              "----------------------------------------------------------"
+            );
+            await Promise.all(
+              messages.map(async (message, msgIndex) => {
+                const retryableTicketId = message.retryableCreationId;
+                let status = await message.status();
+
+                // Format the result message
+                const resultMessage = `${msgIndex + 1}. ${
+                  ParentToChildMessageStatus[status]
+                }:\nOrbitTxHash: ${childChain.explorerUrl}tx/${retryableTicketId}`;
+
+                logResult(childChain.name, resultMessage);
+                console.log(
+                  "----------------------------------------------------------"
+                );
+              })
+            );
+            retryablesFound = true; // Set to true if retryables are found
+          }
+        })
+      );
     }
 
-    return retryablesFound
-  }
+    return retryablesFound;
+  };
+
 
   // Function to continuously check retryable transactions
   const checkRetryablesContinuous = async (
