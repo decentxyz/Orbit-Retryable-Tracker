@@ -11,7 +11,7 @@
         "sequencerInbox": "0x6216dD1EE27C5aCEC7427052d3eCDc98E2bc2221"
       },
       "orbitRpcUrl": "https://rpc.degen.tips",
-      "parentRpcUrl": "https://mainnet.base.org/rpc",
+      "parentRpcUrl": "https://base-mainnet.g.alchemy.com/v2/TrGKV32LxsLgMDgcIVIRMshaDwqwoC5M",
       "explorerUrl": "https://explorer.degen.tips",
       "parentExplorerUrl": "https://basescan.org/",
       "isArbitrum": true,

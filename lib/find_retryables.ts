@@ -53,7 +53,7 @@ const logger = winston.createLogger({
 
 // Function to log results with chainName
 const logResult = (chainName: string, message: string) => {
-  logger.info(`[${chainName}] ${message}`)
+  if (message == "FUNDS_DEPOSITED_ON_L2") logger.info(`[${chainName}] ${message}`)
 }
 
 // Parsing command line arguments using yargs
@@ -146,7 +146,7 @@ const processChildChain = async (
     return toBlock
   }
 
-  const MAX_CONCURRENT_PROMISES = 25;
+  const MAX_CONCURRENT_PROMISES = 100;
 
   const checkRetryables = async (
     parentChainProvider: providers.Provider,
@@ -186,22 +186,18 @@ const processChildChain = async (
           const messages = await arbParentTxReceipt.getL1ToL2Messages(
             childChainProvider
           );
-
           if (messages.length > 0) {
-            logResult(
-              childChain.name,
-              `${messages.length} retryable${
-                messages.length === 1 ? "" : "s"
-              } found for ${
-                childChain.name
-              } chain. Checking their status:\n\nArbtxhash: ${
-                childChain.parentExplorerUrl
-              }tx/${parentTxHash}`
-            );
-            console.log(
-              "----------------------------------------------------------"
-            );
-            await Promise.all(
+            // logResult(
+            //   childChain.name,
+            //   `${messages.length} retryable${
+            //     messages.length === 1 ? "" : "s"
+            //   } found for ${
+            //     childChain.name
+            //   } chain. Checking their status:\n\nArbtxhash: ${
+            //     childChain.parentExplorerUrl
+            //   }/tx/${parentTxHash}`
+            // );
+            const test = await Promise.all(
               messages.map(async (message, msgIndex) => {
                 const retryableTicketId = message.retryableCreationId;
                 let status = await message.status();
@@ -209,12 +205,12 @@ const processChildChain = async (
                 // Format the result message
                 const resultMessage = `${msgIndex + 1}. ${
                   ParentToChildMessageStatus[status]
-                }:\nOrbitTxHash: ${childChain.explorerUrl}tx/${retryableTicketId}`;
+                }:\nOrbitTxHash: ${childChain.explorerUrl}/tx/${retryableTicketId}`;
 
-                logResult(childChain.name, resultMessage);
-                console.log(
-                  "----------------------------------------------------------"
-                );
+                if (ParentToChildMessageStatus[status] === "FUNDS_DEPOSITED_ON_L2") {
+                 logResult(childChain.name, retryableTicketId);
+                 console.log(parentTxReceipt.transactionHash, retryableTicketId)
+                }
               })
             );
             retryablesFound = true; // Set to true if retryables are found
@@ -224,6 +220,25 @@ const processChildChain = async (
     }
 
     return retryablesFound;
+  };
+
+  const processLargeBlockRange = async (fromBlock: number, toBlock: number) => {
+    const chunkSize = 1000; // Define the size of each chunk
+    let currentFromBlock = fromBlock;
+    let currentToBlock = Math.min(fromBlock + chunkSize - 1, toBlock);
+  
+    while (currentFromBlock <= toBlock) {
+      console.log(`Processing blocks from ${currentFromBlock} to ${currentToBlock}`);
+      
+      // Call the checkRetryablesOneOff function for the current chunk
+      await checkRetryablesOneOff(currentFromBlock, currentToBlock);
+  
+      // Prepare for the next chunk
+      currentFromBlock = currentToBlock + 1;
+      currentToBlock = Math.min(currentFromBlock + chunkSize - 1, toBlock);
+    }
+  
+    console.log('All chunks have been processed.');
   };
 
 
@@ -272,7 +287,7 @@ const processChildChain = async (
     await checkRetryablesContinuous(options.fromBlock, options.toBlock)
   } else {
     console.log('One-off mode activated.')
-    await checkRetryablesOneOff(options.fromBlock, options.toBlock)
+    await processLargeBlockRange(options.fromBlock, options.toBlock)
     // Log a message if no retryables were found for the child chain
     if (!retryablesFound) {
       console.log(`No retryables found for ${childChain.name}`)
