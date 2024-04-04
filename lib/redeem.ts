@@ -7,9 +7,7 @@ require('dotenv').config();
 async function main() {
   // Hardcoded array of hashes
   const hashes = [
-    '0x6710886f80a9ca057e8829780e050b6a9695456ef4b4dbe55edac89feebd3303',
-    '0x68b6d635f4a48a0e966dcad238aeecb9558ccc2764c6f1bc3713e1924720fbd0',
-    '0x165e0baeaf6e44c615f72075c5b8cc6e0b755bdbd9edf7378e9fba6374c9db43',
+    '0xe0f23e97c44a76a690d285ccf3da34d8626566dd584e3ef93b1140fe43e1af52',
   ];
 
   const {
